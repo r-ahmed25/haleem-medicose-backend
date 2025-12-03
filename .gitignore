@@ -1,0 +1,33 @@
+# Node
+node_modules/
+*/node_modules/
+
+# ENV files
+.env
+.env.*
+frontend/.env*
+backend/.env*
+
+# Build
+dist/
+build/
+out/
+
+# Vite
+frontend/dist/
+frontend/.vite/
+
+# Capacitor / Android
+android/
+ios/
+
+# Logs
+*.log
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
+
+# Optional
+uploads/
