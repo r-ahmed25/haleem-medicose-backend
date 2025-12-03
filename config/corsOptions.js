@@ -17,8 +17,8 @@ const allowedOrigins = [
   // Mobile / Webview / Capacitor
   'capacitor://localhost',
   'ionic://localhost',
-  'http://localhost',
   'https://localhost',
+  'http://localhost',
   'file://',
   'null'
 ];
