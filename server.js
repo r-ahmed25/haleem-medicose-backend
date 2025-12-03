@@ -33,7 +33,7 @@ const shouldLogMobileTraffic = process.env.LOG_MOBILE_TRAFFIC === "true";
 
 connectDB();
 app.use(cors(corsOptions));
-app.options("/*", cors(corsOptions));   // IMPORTANT: Preflight support
+app.options("/", cors(corsOptions));   // IMPORTANT: Preflight support
 app.use(cookieParser());
 
 if (shouldLogMobileTraffic) {
