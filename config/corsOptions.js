@@ -5,7 +5,8 @@ const allowedOrigins = [
   'http://localhost:5174',
   'https://localhost:5174',
   'http://localhost:5175',
-  'https://localhost:5175',
+  'https://localhost:5175',,
+  'https://haleem-medicose-backend.onrender.com'
 
   // Laptop IP (HTTP + HTTPS)
   'http://192.168.29.162:5000',
