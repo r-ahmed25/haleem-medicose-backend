@@ -2,6 +2,8 @@ const allowedOrigins = [
   // Localhost (frontend dev)
   'http://localhost:5173',
   'https://localhost:5173',
+  'http://10.0.2.2:5173',
+  'https://10.0.2.2:5173',
   'http://localhost:5174',
   'https://localhost:5174',
   'http://localhost:5175',
