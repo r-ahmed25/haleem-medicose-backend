@@ -27,7 +27,6 @@ const allowedOrigins = [
   "null",
 
   // Production
-  "https://haleem-api.onrender.com",
   "https://haleem-medicose-backend.onrender.com",
 ];
 
