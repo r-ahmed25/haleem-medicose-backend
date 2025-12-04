@@ -124,7 +124,7 @@ const sslOptions = {
   cert: fs.readFileSync(path.join(__dirname, "localhost+1.pem")),
 };
 
-https.createServer(sslOptions, app).listen(PORT, () => {
+https.createServer(sslOptions, app).listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Secure server running on ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
 });
