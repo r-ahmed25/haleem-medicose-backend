@@ -27,7 +27,8 @@ const allowedOrigins = [
   "null",
 
   // Production
-  "https://haleem-medicose-backend.onrender.com"
+  "https://haleem-api.onrender.com",
+  "https://haleem-medicose-backend.onrender.com",
 ];
 
 const corsOptions = {
@@ -46,12 +47,15 @@ const corsOptions = {
     }
 
     // Don't throw — allow but log unexpected origins (helps debugging)
-    console.warn("[CORS] Origin not in allowed list, allowing for now:", origin);
+    console.warn(
+      "[CORS] Origin not in allowed list, allowing for now:",
+      origin
+    );
     return callback(null, true);
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 };
 
 export default corsOptions;
