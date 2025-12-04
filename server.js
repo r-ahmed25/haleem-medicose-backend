@@ -33,7 +33,7 @@ const shouldLogMobileTraffic = process.env.LOG_MOBILE_TRAFFIC === "true";
 
 connectDB();
 app.use(cors(corsOptions));
-app.options("/*", (req, res) => {
+app.options("/", (req, res) => {
   // Use the origin header, fall back to '*' if absent
   const origin = req.get("Origin") || "*";
 
