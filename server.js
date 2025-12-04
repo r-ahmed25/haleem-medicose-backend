@@ -28,9 +28,13 @@ import corsOptions from "./config/corsOptions.js";
 dotenv.config({ path: path.resolve(__dirname, ".env.local") });
 
 const app = express();
+
 const PORT = process.env.PORT || 5000;
 const shouldLogMobileTraffic = process.env.LOG_MOBILE_TRAFFIC === "true";
-
+app.use((req, res, next) => {
+  console.log(`[req] ${req.method} ${req.url} origin=${req.headers.origin}`);
+  next();
+});
 connectDB();
 app.use(cors(corsOptions));
 app.options("/", (req, res) => {
