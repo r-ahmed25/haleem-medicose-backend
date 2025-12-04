@@ -30,8 +30,6 @@ dotenv.config({ path: path.resolve(__dirname, ".env.local") });
 const app = express();
 
 const PORT = process.env.PORT || 5000;
-const NODE_ENV = process.env.NODE_ENV || "development";
-
 const shouldLogMobileTraffic = process.env.LOG_MOBILE_TRAFFIC === "true";
 app.use((req, res, next) => {
   console.log(`[req] ${req.method} ${req.url} origin=${req.headers.origin}`);
@@ -40,8 +38,32 @@ app.use((req, res, next) => {
 connectDB();
 app.use(cors(corsOptions));
 
+// Handle CORS preflight for all routes
+app.options("/", (req, res) => {
+  // Use the origin header, fall back to '*' if absent
+  const origin = req.get("Origin") || "*";
 
+  res.header("Access-Control-Allow-Origin", origin);
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS"
+  );
 
+  // If client requested specific headers, echo back allowed headers
+  const reqHeaders = req.get("Access-Control-Request-Headers");
+  if (reqHeaders) {
+    res.header("Access-Control-Allow-Headers", reqHeaders);
+  } else {
+    res.header(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization, X-Requested-With"
+    );
+  }
+
+  // success for preflight
+  return res.status(204).send();
+}); // IMPORTANT: Preflight support for all routes
 app.use(cookieParser());
 
 if (shouldLogMobileTraffic) {
@@ -99,20 +121,12 @@ app.use((req, res, next) => {
   res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
 });
 
-if (NODE_ENV === "development" && process.env.USE_HTTPS === "true") {
-  const sslOptions = {
-    key: fs.readFileSync(path.join(__dirname, "localhost+1-key.pem")),
-    cert: fs.readFileSync(path.join(__dirname, "localhost+1.pem")),
-  };
+const sslOptions = {
+  key: fs.readFileSync(path.join(__dirname, "localhost+1-key.pem")),
+  cert: fs.readFileSync(path.join(__dirname, "localhost+1.pem")),
+};
 
-  https.createServer(sslOptions, app).listen(PORT, "0.0.0.0", () => {
-    console.log(`✅ Local HTTPS server running on https://localhost:${PORT}`);
-  });
-} 
-else {
-  // ✅ Render / Cloud / Anywhere else
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`✅ Server running on port ${PORT}`);
-    console.log(`Environment: ${NODE_ENV}`);
-  });
-}
+https.createServer(sslOptions, app).listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Secure server running on ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+});
