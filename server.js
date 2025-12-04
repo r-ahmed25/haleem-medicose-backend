@@ -33,7 +33,31 @@ const shouldLogMobileTraffic = process.env.LOG_MOBILE_TRAFFIC === "true";
 
 connectDB();
 app.use(cors(corsOptions));
-app.options("/", cors(corsOptions));   // IMPORTANT: Preflight support
+app.options("/*", (req, res) => {
+  // Use the origin header, fall back to '*' if absent
+  const origin = req.get("Origin") || "*";
+
+  res.header("Access-Control-Allow-Origin", origin);
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS"
+  );
+
+  // If client requested specific headers, echo back allowed headers
+  const reqHeaders = req.get("Access-Control-Request-Headers");
+  if (reqHeaders) {
+    res.header("Access-Control-Allow-Headers", reqHeaders);
+  } else {
+    res.header(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization, X-Requested-With"
+    );
+  }
+
+  // success for preflight
+  return res.status(204).send();
+});  // IMPORTANT: Preflight support
 app.use(cookieParser());
 
 if (shouldLogMobileTraffic) {

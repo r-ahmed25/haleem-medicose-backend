@@ -1,5 +1,6 @@
+// config/corsOptions.js
 const allowedOrigins = [
-  // Frontend DEV
+  // Local dev
   "http://localhost",
   "https://localhost",
   "http://localhost:5173",
@@ -9,7 +10,7 @@ const allowedOrigins = [
   "http://localhost:5175",
   "https://localhost:5175",
 
-  // Android Emulator
+  // Android emulator
   "http://10.0.2.2",
   "https://10.0.2.2",
   "http://10.0.2.2:5173",
@@ -18,8 +19,6 @@ const allowedOrigins = [
   // LAN
   "http://192.168.29.162:5000",
   "https://192.168.29.162:5000",
-  "http://192.168.29.162:5173",
-  "https://192.168.29.162:5173",
 
   // Mobile / Capacitor
   "capacitor://localhost",
@@ -33,25 +32,26 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
-    console.log("CORS request from:", origin);
+    // log origin for debugging
+    console.log("[CORS] origin:", origin);
 
-    // mobile apps / postman
+    // allow null / mobile / Postman
     if (!origin || origin === "null") {
       return callback(null, true);
     }
 
+    // exact-match allowed origins
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
-    // DO NOT BREAK APP - allow but log
-    console.warn("CORS allowed (not in list):", origin);
+    // Don't throw — allow but log unexpected origins (helps debugging)
+    console.warn("[CORS] Origin not in allowed list, allowing for now:", origin);
     return callback(null, true);
   },
-
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
 };
 
 export default corsOptions;
