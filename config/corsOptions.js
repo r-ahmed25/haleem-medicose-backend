@@ -26,8 +26,7 @@ const allowedOrigins = [
   "file://",
   "null",
 
-  // Production
-  "https://haleem-medicose-backend.onrender.com",
+ 
 ];
 
 const corsOptions = {
