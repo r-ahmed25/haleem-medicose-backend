@@ -62,15 +62,16 @@ const setCookie = (res, accessToken, refreshToken) => {
 
   res.cookie("access_token", accessToken, {
     httpOnly: true,
-    secure: isProd,
+    secure: !!isProd,
     sameSite: isProd ? "None" : "Lax",
     maxAge: 30 * 60 * 1000, // 30 minutes
+    path: "/",
   });
   res.cookie("refresh_token", refreshToken, {
     httpOnly: isProd,
-    secure: isProd,
+    secure: !! isProd,
     sameSite: isProd ? "None" : "Lax",
-    path: "/api/auth/refresh",
+    path: "/",
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 };
