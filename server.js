@@ -29,7 +29,9 @@ dotenv.config({ path: path.resolve(__dirname, "./.env.local") });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const FORCE_HTTPS = process.env.FORCE_HTTPS === "true";
 const NODE_ENV = process.env.NODE_ENV || "development";
+
 
 const shouldLogMobileTraffic = process.env.LOG_MOBILE_TRAFFIC === "true";
 app.use((req, res, next) => {
@@ -37,6 +39,10 @@ app.use((req, res, next) => {
   next();
 });
 connectDB();
+app.use((req, res, next) => {
+  console.log(`[${NODE_ENV}] ${req.method} ${req.url} origin=${req.headers.origin || "none"}`);
+  next();
+});
 app.use(cors(corsOptions));
 
 
@@ -98,20 +104,18 @@ app.use((req, res, next) => {
   res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
 });
 
-if (NODE_ENV === "development" && process.env.USE_HTTPS === "true") {
+if (NODE_ENV === "development" && FORCE_HTTPS === "true") {
   const sslOptions = {
-    key: fs.readFileSync(path.join(__dirname, "localhost+1-key.pem")),
-    cert: fs.readFileSync(path.join(__dirname, "localhost+1.pem")),
+    key: fs.readFileSync(path.join(__dirname, "localhost-key.pem")),
+    cert: fs.readFileSync(path.join(__dirname, "localhost.pem")),
   };
 
   https.createServer(sslOptions, app).listen(PORT, "0.0.0.0", () => {
     console.log(`✅ Local HTTPS server running on https://localhost:${PORT}`);
   });
-} 
-else {
-  // ✅ Render / Cloud / Anywhere else
+} else {
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`✅ Server running on port ${PORT}`);
-    console.log(`Environment: ${NODE_ENV}`);
+    console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
+    console.log(`✅ Environment: ${NODE_ENV}`);
   });
 }
