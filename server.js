@@ -79,7 +79,25 @@ if (shouldLogMobileTraffic) {
   });
 }
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ 
+  limit: "10mb",
+  timeout: 30000 // 30 seconds timeout for mobile requests
+}));
+
+// Add request timeout middleware for mobile devices
+app.use((req, res, next) => {
+  // Set timeout based on request type
+  const timeout = req.path.startsWith('/api/products') ? 10000 : 30000; // 10s for products, 30s for others
+  res.setTimeout(timeout, () => {
+    console.warn(`Request timeout for ${req.method} ${req.path} - Mobile/Render delay issue`);
+    res.status(408).json({ 
+      error: "Request Timeout", 
+      message: "Request took too long to process, please try again",
+      code: "MOBILE_TIMEOUT"
+    });
+  });
+  next();
+});
 
 // Routes
 app.use("/api/auth", authRoutes);
