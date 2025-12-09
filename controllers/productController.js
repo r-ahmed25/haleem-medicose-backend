@@ -194,12 +194,23 @@ export const updateProduct = async (req, res) => {
     const { id } = req.params;
     const { name, description, price, category, image, stock } = req.body;
 
+    // Detect if this is a mobile request (user agent check)
+    const userAgent = req.get("User-Agent") || "";
+    const isMobile =
+      /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        userAgent
+      );
+
+    console.log(
+      `📱 Update request from ${isMobile ? "MOBILE" : "DESKTOP"} device`
+    );
+
     // Find the existing product
     const product = await Product.findById(id);
     if (!product) {
       return res.status(404).json({
         error: "Product not found",
-        message: "No product found with the provided ID"
+        message: "No product found with the provided ID",
       });
     }
 
@@ -207,21 +218,21 @@ export const updateProduct = async (req, res) => {
     if (name !== undefined && !name.trim()) {
       return res.status(400).json({
         error: "Invalid name",
-        message: "Product name cannot be empty"
+        message: "Product name cannot be empty",
       });
     }
 
     if (price !== undefined && (isNaN(price) || price < 0)) {
       return res.status(400).json({
         error: "Invalid price",
-        message: "Price must be a valid positive number"
+        message: "Price must be a valid positive number",
       });
     }
 
     if (stock !== undefined && (isNaN(stock) || stock < 0)) {
       return res.status(400).json({
         error: "Invalid stock",
-        message: "Stock must be a valid non-negative number"
+        message: "Stock must be a valid non-negative number",
       });
     }
 
@@ -235,22 +246,43 @@ export const updateProduct = async (req, res) => {
         if (product.image) {
           try {
             const oldPublicId = product.image.split("/").pop().split(".")[0];
-            await cloudinary.uploader.destroy(`haleemmedicose/products/${oldPublicId}`);
+            await cloudinary.uploader.destroy(
+              `haleemmedicose/products/${oldPublicId}`
+            );
           } catch (deleteError) {
-            console.warn("Failed to delete old image from Cloudinary:", deleteError.message);
+            console.warn(
+              "Failed to delete old image from Cloudinary:",
+              deleteError.message
+            );
           }
         }
 
-        // Upload new image
-        cloudinaryResponse = await cloudinary.uploader.upload(image, {
+        // Upload new image with mobile-specific options
+        const uploadOptions = {
           folder: "products",
-        });
+          ...(isMobile && {
+            transformation: [
+              { width: 800, height: 800, crop: "limit", quality: "auto:good" },
+            ],
+          }),
+        };
+
+        cloudinaryResponse = await cloudinary.uploader.upload(
+          image,
+          uploadOptions
+        );
         newImageUrl = cloudinaryResponse.secure_url;
+
+        console.log(
+          `📷 Image uploaded successfully (${
+            isMobile ? "mobile optimized" : "original"
+          })`
+        );
       } catch (cloudinaryError) {
         console.error("Cloudinary upload error:", cloudinaryError);
         return res.status(400).json({
           error: "Image upload failed",
-          message: "Failed to upload product image"
+          message: "Failed to upload product image",
         });
       }
     }
@@ -266,12 +298,16 @@ export const updateProduct = async (req, res) => {
     // Save the updated product
     await product.save();
 
-    console.log("Product updated successfully:", product._id);
+    console.log(
+      `✅ Product updated successfully (${isMobile ? "mobile" : "desktop"}):`,
+      product._id
+    );
 
     res.status(200).json({
-      message: "Product updated successfully",
+      message: `Product updated successfully${isMobile ? " on mobile" : ""}`,
       product: product,
-      success: true
+      success: true,
+      isMobile,
     });
   } catch (error) {
     console.error("Error updating product:", error);
@@ -281,13 +317,13 @@ export const updateProduct = async (req, res) => {
       const messages = Object.values(error.errors).map((err) => err.message);
       return res.status(400).json({
         error: "Validation failed",
-        message: messages.join(", ")
+        message: messages.join(", "),
       });
     }
 
     res.status(500).json({
       error: "Internal server error",
-      message: "An unexpected error occurred while updating the product"
+      message: "An unexpected error occurred while updating the product",
     });
   }
 };
@@ -374,7 +410,9 @@ export const decreaseStock = async (req, res) => {
     const { id } = req.params;
     const { quantity } = req.body;
 
-    console.log(`[DECREASE_STOCK] Request received for product ${id} with quantity ${quantity}`);
+    console.log(
+      `[DECREASE_STOCK] Request received for product ${id} with quantity ${quantity}`
+    );
     console.log(`[DECREASE_STOCK] Request URL: ${req.originalUrl}`);
     console.log(`[DECREASE_STOCK] Request method: ${req.method}`);
 
@@ -387,7 +425,10 @@ export const decreaseStock = async (req, res) => {
     }
 
     const product = await Product.findById(id);
-    console.log(`[DECREASE_STOCK] Product found:`, product ? `${product.name} (stock: ${product.stock})` : 'NOT FOUND');
+    console.log(
+      `[DECREASE_STOCK] Product found:`,
+      product ? `${product.name} (stock: ${product.stock})` : "NOT FOUND"
+    );
 
     if (!product) {
       console.log(`[DECREASE_STOCK] Product ${id} not found in database`);
@@ -399,7 +440,9 @@ export const decreaseStock = async (req, res) => {
 
     // Check if there's enough stock
     if (product.stock < quantity) {
-      console.log(`[DECREASE_STOCK] Insufficient stock: have ${product.stock}, need ${quantity}`);
+      console.log(
+        `[DECREASE_STOCK] Insufficient stock: have ${product.stock}, need ${quantity}`
+      );
       return res.status(400).json({
         error: "Insufficient stock",
         message: `Only ${product.stock} items available, but trying to decrease by ${quantity}`,
@@ -412,7 +455,9 @@ export const decreaseStock = async (req, res) => {
     product.stock -= quantity;
     await product.save();
 
-    console.log(`[DECREASE_STOCK] SUCCESS: ${product.name} stock decreased from ${oldStock} to ${product.stock} (decreased by ${quantity})`);
+    console.log(
+      `[DECREASE_STOCK] SUCCESS: ${product.name} stock decreased from ${oldStock} to ${product.stock} (decreased by ${quantity})`
+    );
 
     res.status(200).json({
       message: "Stock decreased successfully",
@@ -424,14 +469,14 @@ export const decreaseStock = async (req, res) => {
       },
       decreasedBy: quantity,
       newStock: product.stock,
-      oldStock: oldStock
+      oldStock: oldStock,
     });
   } catch (error) {
     console.error("[DECREASE_STOCK] Error:", error);
     res.status(500).json({
       error: "Internal server error",
       message: "Failed to decrease stock",
-      details: error.message
+      details: error.message,
     });
   }
 };

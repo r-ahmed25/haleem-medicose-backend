@@ -79,21 +79,34 @@ if (shouldLogMobileTraffic) {
   });
 }
 
-app.use(express.json({ 
-  limit: "10mb",
-  timeout: 30000 // 30 seconds timeout for mobile requests
+app.use(express.json({
+  limit: "50mb", // Increased from 10mb to 50mb for mobile images
+  timeout: 120000 // Increased from 30s to 120s (2 minutes) for mobile requests
 }));
 
 // Add request timeout middleware for mobile devices
 app.use((req, res, next) => {
-  // Set timeout based on request type
-  const timeout = req.path.startsWith('/api/products') ? 10000 : 30000; // 10s for products, 30s for others
+  // Set timeout based on request type - much longer for products with images
+  const isProductRequest = req.path.startsWith('/api/products');
+  const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(req.get('User-Agent') || '');
+  
+  let timeout;
+  if (isProductRequest) {
+    // Product requests: 60s for mobile, 30s for desktop
+    timeout = isMobile ? 60000 : 30000;
+  } else {
+    // Other requests: 45s
+    timeout = 45000;
+  }
+  
   res.setTimeout(timeout, () => {
-    console.warn(`Request timeout for ${req.method} ${req.path} - Mobile/Render delay issue`);
-    res.status(408).json({ 
-      error: "Request Timeout", 
-      message: "Request took too long to process, please try again",
-      code: "MOBILE_TIMEOUT"
+    console.warn(`Request timeout for ${req.method} ${req.path} - Device: ${isMobile ? 'Mobile' : 'Desktop'}, Timeout: ${timeout}ms`);
+    res.status(408).json({
+      error: "Request Timeout",
+      message: `Request took too long to process${isMobile ? ' on mobile' : ''}, please try again with a smaller image`,
+      code: "MOBILE_TIMEOUT",
+      device: isMobile ? 'mobile' : 'desktop',
+      timeoutMs: timeout
     });
   });
   next();
