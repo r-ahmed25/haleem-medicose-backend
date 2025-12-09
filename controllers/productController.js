@@ -190,7 +190,106 @@ export const addProduct = async (req, res) => {
 };
 
 export const updateProduct = async (req, res) => {
-  // Logic to update a product by ID
+  try {
+    const { id } = req.params;
+    const { name, description, price, category, image, stock } = req.body;
+
+    // Find the existing product
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({
+        error: "Product not found",
+        message: "No product found with the provided ID"
+      });
+    }
+
+    // Validate required fields if provided
+    if (name !== undefined && !name.trim()) {
+      return res.status(400).json({
+        error: "Invalid name",
+        message: "Product name cannot be empty"
+      });
+    }
+
+    if (price !== undefined && (isNaN(price) || price < 0)) {
+      return res.status(400).json({
+        error: "Invalid price",
+        message: "Price must be a valid positive number"
+      });
+    }
+
+    if (stock !== undefined && (isNaN(stock) || stock < 0)) {
+      return res.status(400).json({
+        error: "Invalid stock",
+        message: "Stock must be a valid non-negative number"
+      });
+    }
+
+    let cloudinaryResponse = null;
+    let newImageUrl = product.image; // Keep existing image by default
+
+    // Handle image update if provided
+    if (image && image !== product.image) {
+      try {
+        // Delete old image from Cloudinary if it exists
+        if (product.image) {
+          try {
+            const oldPublicId = product.image.split("/").pop().split(".")[0];
+            await cloudinary.uploader.destroy(`haleemmedicose/products/${oldPublicId}`);
+          } catch (deleteError) {
+            console.warn("Failed to delete old image from Cloudinary:", deleteError.message);
+          }
+        }
+
+        // Upload new image
+        cloudinaryResponse = await cloudinary.uploader.upload(image, {
+          folder: "products",
+        });
+        newImageUrl = cloudinaryResponse.secure_url;
+      } catch (cloudinaryError) {
+        console.error("Cloudinary upload error:", cloudinaryError);
+        return res.status(400).json({
+          error: "Image upload failed",
+          message: "Failed to upload product image"
+        });
+      }
+    }
+
+    // Update product fields
+    if (name !== undefined) product.name = name.trim();
+    if (description !== undefined) product.description = description.trim();
+    if (price !== undefined) product.price = parseFloat(price);
+    if (category !== undefined) product.category = category;
+    if (stock !== undefined) product.stock = parseInt(stock, 10);
+    if (image !== undefined) product.image = newImageUrl;
+
+    // Save the updated product
+    await product.save();
+
+    console.log("Product updated successfully:", product._id);
+
+    res.status(200).json({
+      message: "Product updated successfully",
+      product: product,
+      success: true
+    });
+  } catch (error) {
+    console.error("Error updating product:", error);
+
+    // Handle mongoose validation errors
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        error: "Validation failed",
+        message: messages.join(", ")
+      });
+    }
+
+    res.status(500).json({
+      error: "Internal server error",
+      message: "An unexpected error occurred while updating the product"
+    });
+  }
 };
 export const deleteProduct = async (req, res) => {
   const { id } = req.params;
