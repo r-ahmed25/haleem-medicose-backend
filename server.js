@@ -15,6 +15,7 @@ import orderRoutes from "./routes/orderRoutes.js";
 import analyticsRoutes from "./routes/analyticsRoute.js";
 import contactRoutes from "./routes/contactRoutes.js";
 import prescriptionRoutes from "./routes/prescriptionRoute.js";
+import categoryRoutes from "./routes/categoryRoutes.js";
 
 import { fileURLToPath } from "url";
 import { dirname } from "path";
@@ -32,7 +33,6 @@ const PORT = process.env.PORT || 5000;
 const FORCE_HTTPS = process.env.FORCE_HTTPS === "true";
 const NODE_ENV = process.env.NODE_ENV || "development";
 
-
 const shouldLogMobileTraffic = process.env.LOG_MOBILE_TRAFFIC === "true";
 app.use((req, res, next) => {
   console.log(`[req] ${req.method} ${req.url} origin=${req.headers.origin}`);
@@ -40,12 +40,14 @@ app.use((req, res, next) => {
 });
 connectDB();
 app.use((req, res, next) => {
-  console.log(`[${NODE_ENV}] ${req.method} ${req.url} origin=${req.headers.origin || "none"}`);
+  console.log(
+    `[${NODE_ENV}] ${req.method} ${req.url} origin=${
+      req.headers.origin || "none"
+    }`
+  );
   next();
 });
 app.use(cors(corsOptions));
-
-
 
 app.use(cookieParser());
 
@@ -79,17 +81,22 @@ if (shouldLogMobileTraffic) {
   });
 }
 
-app.use(express.json({
-  limit: "50mb", // Increased from 10mb to 50mb for mobile images
-  timeout: 120000 // Increased from 30s to 120s (2 minutes) for mobile requests
-}));
+app.use(
+  express.json({
+    limit: "50mb", // Increased from 10mb to 50mb for mobile images
+    timeout: 120000, // Increased from 30s to 120s (2 minutes) for mobile requests
+  })
+);
 
 // Add request timeout middleware for mobile devices
 app.use((req, res, next) => {
   // Set timeout based on request type - much longer for products with images
-  const isProductRequest = req.path.startsWith('/api/products');
-  const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(req.get('User-Agent') || '');
-  
+  const isProductRequest = req.path.startsWith("/api/products");
+  const isMobile =
+    /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      req.get("User-Agent") || ""
+    );
+
   let timeout;
   if (isProductRequest) {
     // Product requests: 60s for mobile, 30s for desktop
@@ -98,15 +105,21 @@ app.use((req, res, next) => {
     // Other requests: 45s
     timeout = 45000;
   }
-  
+
   res.setTimeout(timeout, () => {
-    console.warn(`Request timeout for ${req.method} ${req.path} - Device: ${isMobile ? 'Mobile' : 'Desktop'}, Timeout: ${timeout}ms`);
+    console.warn(
+      `Request timeout for ${req.method} ${req.path} - Device: ${
+        isMobile ? "Mobile" : "Desktop"
+      }, Timeout: ${timeout}ms`
+    );
     res.status(408).json({
       error: "Request Timeout",
-      message: `Request took too long to process${isMobile ? ' on mobile' : ''}, please try again with a smaller image`,
+      message: `Request took too long to process${
+        isMobile ? " on mobile" : ""
+      }, please try again with a smaller image`,
       code: "MOBILE_TIMEOUT",
-      device: isMobile ? 'mobile' : 'desktop',
-      timeoutMs: timeout
+      device: isMobile ? "mobile" : "desktop",
+      timeoutMs: timeout,
     });
   });
   next();
@@ -123,6 +136,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/prescriptions", prescriptionRoutes);
+app.use("/api/categories", categoryRoutes);
 
 // Serve static files from frontend build
 app.use(express.static(path.join(__dirname, "../frontend/dist")));
