@@ -1,5 +1,6 @@
 import Order from "../models/Order.js";
 import User from "../models/User.js";
+import Product from "../models/Product.js";
 import { generateInvoice } from "../lib/invoiceGenerator.js"; // to be created
 
 // GET /api/orders?status=processing&page=1&limit=10
@@ -45,7 +46,9 @@ export const getOrderById = async (req, res) => {
       .lean();
 
     if (!order)
-      return res.status(404).json({ success: false, message: "Order not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
 
     return res.json({ success: true, order });
   } catch (err) {
@@ -64,7 +67,9 @@ export const downloadInvoice = async (req, res) => {
       .lean();
 
     if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
     }
 
     const pdfBuffer = await generateInvoice(order);
@@ -77,10 +82,11 @@ export const downloadInvoice = async (req, res) => {
     res.send(pdfBuffer);
   } catch (err) {
     console.error("downloadInvoice error:", err);
-    res.status(500).json({ success: false, message: "Failed to generate invoice" });
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to generate invoice" });
   }
 };
-
 
 export const getAllOrders = async (req, res) => {
   try {
@@ -97,7 +103,11 @@ export const getAllOrders = async (req, res) => {
     res.json({
       success: true,
       orders,
-      pagination: { total, totalPages: Math.ceil(total / limit), page: Number(page) },
+      pagination: {
+        total,
+        totalPages: Math.ceil(total / limit),
+        page: Number(page),
+      },
     });
   } catch (err) {
     console.error("getAllOrders error:", err);
@@ -111,7 +121,9 @@ export const downloadInvoiceAdmin = async (req, res) => {
       .populate("orderItems.product", "name price");
 
     if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
     }
 
     // Reuse your existing invoice generator (no req/res inside it)
@@ -125,7 +137,9 @@ export const downloadInvoiceAdmin = async (req, res) => {
     res.send(pdfBuffer);
   } catch (err) {
     console.error("downloadInvoiceAdmin error:", err);
-    res.status(500).json({ success: false, message: "Failed to generate invoice" });
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to generate invoice" });
   }
 };
 
@@ -136,11 +150,58 @@ export const updateOrderStatus = async (req, res) => {
     const validStatuses = ["processing", "delivered", "cancelled"];
 
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({ success: false, message: "Invalid status" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid status" });
     }
 
+    // Get the current order to check previous status
+    const currentOrder = await Order.findById(id);
+    if (!currentOrder)
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
+
+    const previousStatus = currentOrder.status;
+
+    // Update the order status
     const order = await Order.findByIdAndUpdate(id, { status }, { new: true });
-    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    if (!order)
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
+
+    // If status changed to cancelled and wasn't cancelled before, restore stock
+    if (status === "cancelled" && previousStatus !== "cancelled") {
+      console.log(
+        `[ORDER_CANCELLED] Restoring stock for cancelled order ${order._id}`
+      );
+
+      for (const item of order.orderItems) {
+        try {
+          const product = await Product.findById(item.product);
+          if (!product) {
+            console.error(
+              `[STOCK_RESTORE] Product ${item.product} not found for order ${order._id}`
+            );
+            continue;
+          }
+
+          const oldStock = product.stock;
+          product.stock += item.quantity; // Add back the quantity
+          await product.save();
+
+          console.log(
+            `[STOCK_RESTORE] ${product.name}: stock increased from ${oldStock} to ${product.stock} (Order: ${order._id})`
+          );
+        } catch (error) {
+          console.error(
+            `[STOCK_RESTORE] Failed to restore stock for product ${item.product} in order ${order._id}:`,
+            error
+          );
+        }
+      }
+    }
 
     res.json({ success: true, order });
   } catch (err) {

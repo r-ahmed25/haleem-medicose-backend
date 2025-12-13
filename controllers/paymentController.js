@@ -1,6 +1,7 @@
 import { instance, getRazorpayKey } from "../lib/razorpay.js";
 import Order from "../models/Order.js";
 import User from "../models/User.js";
+import Product from "../models/Product.js";
 import PendingPayment from "../models/PendingPayment.js";
 
 import crypto from "crypto";
@@ -18,7 +19,7 @@ dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 // ✅ Create Razorpay Order
 export const createCheckoutSession = async (req, res) => {
   try {
-    const { totalAmount, cartItems, isCouponApplied } = req.body;
+    const { totalAmount, cartItems, couponCode } = req.body;
 
     if (!totalAmount || totalAmount <= 0) {
       return res
@@ -31,6 +32,10 @@ export const createCheckoutSession = async (req, res) => {
       currency: "INR",
       receipt: `receipt_order_${Date.now()}`,
       payment_capture: 1,
+      notes: {
+        couponCode: couponCode || "",
+        cart: JSON.stringify(cartItems),
+      },
     };
 
     const order = await instance.orders.create(options);
@@ -142,7 +147,7 @@ export const verifyPayment = async (req, res) => {
             signature,
             cartSnapshot: orderItems || [],
             totalAmount,
-            couponApplied,
+            couponApplied: couponApplied || null,
             status: "pending",
             expiresAt: new Date(Date.now() + 1000 * 60 * 60), // 1 hour TTL
           },
@@ -198,6 +203,38 @@ export const verifyPayment = async (req, res) => {
       status: "processing",
     });
 
+    // Update stock for each ordered item
+    for (const item of normalizedItems) {
+      try {
+        const product = await Product.findById(item.product);
+        if (!product) {
+          console.error(
+            `[STOCK_UPDATE] Product ${item.product} not found for order ${order._id}`
+          );
+          continue;
+        }
+
+        if (product.stock < item.quantity) {
+          console.warn(
+            `[STOCK_UPDATE] Insufficient stock for ${product.name}: requested ${item.quantity}, available ${product.stock} (Order: ${order._id})`
+          );
+        }
+
+        const oldStock = product.stock;
+        product.stock = Math.max(0, product.stock - item.quantity);
+        await product.save();
+
+        console.log(
+          `[STOCK_UPDATE] ${product.name}: stock decreased from ${oldStock} to ${product.stock} (Order: ${order._id})`
+        );
+      } catch (error) {
+        console.error(
+          `[STOCK_UPDATE] Failed to update stock for product ${item.product} in order ${order._id}:`,
+          error
+        );
+      }
+    }
+
     // Mark pending as completed if exists
     await PendingPayment.findOneAndUpdate(
       { razorpayOrderId: order_id },
@@ -225,3 +262,18 @@ export const getKey = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+async function createNewCoupon(userId) {
+  await Coupon.findOneAndDelete({ userId });
+
+  const newCoupon = new Coupon({
+    code: "GIFT" + Math.random().toString(36).substring(2, 8).toUpperCase(),
+    discountPercentage: 10,
+    expirationDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+    userId: userId,
+  });
+
+  await newCoupon.save();
+
+  return newCoupon;
+}
