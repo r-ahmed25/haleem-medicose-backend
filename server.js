@@ -4,6 +4,7 @@ import fs from "fs";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+import mongoose from "mongoose";
 
 import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
@@ -39,6 +40,22 @@ app.use((req, res, next) => {
   next();
 });
 connectDB();
+
+// Drop old index if exists
+mongoose.connection.once("open", async () => {
+  try {
+    const collection = mongoose.connection.db.collection("coupons");
+    const indexes = await collection.indexes();
+    const hasUserIDIndex = indexes.some((idx) => idx.name === "userID_1");
+    if (hasUserIDIndex) {
+      await collection.dropIndex("userID_1");
+      console.log("Dropped old userID_1 index");
+    }
+  } catch (error) {
+    console.log("Error dropping index:", error.message);
+  }
+});
+
 app.use((req, res, next) => {
   console.log(
     `[${NODE_ENV}] ${req.method} ${req.url} origin=${

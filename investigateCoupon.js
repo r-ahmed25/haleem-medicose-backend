@@ -41,6 +41,23 @@ const investigateCouponSystem = async () => {
     const collectionNames = collections.map((c) => c.name);
     console.log(`   Available collections: ${collectionNames.join(", ")}`);
 
+    // Drop indexes if needed
+    console.log("\n2.5. 🔧 FIXING INDEXES");
+    try {
+      const indexes = await mongoose.connection.db
+        .collection("coupons")
+        .indexes();
+      console.log(
+        "Current indexes on coupons:",
+        indexes.map((i) => i.name)
+      );
+      // Drop unique index on userID
+      await mongoose.connection.db.collection("coupons").dropIndex("userID_1");
+      console.log("Dropped userID_1 index");
+    } catch (error) {
+      console.log("Error dropping index:", error.message);
+    }
+
     // 3. Check coupon collection
     console.log("\n3. 🎫 COUPON COLLECTION ANALYSIS");
     const totalCoupons = await Coupon.countDocuments();
