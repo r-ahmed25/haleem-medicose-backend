@@ -4,489 +4,281 @@ import cloudinary from "../lib/cloudinary.js";
 import dotenv from "dotenv";
 dotenv.config();
 
-export const getAllProducts = async (req, res) => {
-  try {
-    // Add timeout to handle network delays from Render
-    const productsPromise = Product.find();
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Database query timeout")), 5000)
-    );
 
-    const products = await Promise.race([productsPromise, timeoutPromise]);
-    res.json(products);
-  } catch (error) {
-    console.error("Error fetching products:", error);
-    if (error.message.includes("timeout")) {
-      res.status(504).json({
-        error: "Request timeout",
-        message: "Database connection timeout",
-      });
-    } else {
-      res.status(500).send("Server error");
-    }
+
+/* ==================================================
+   HELPERS
+================================================== */
+
+const uploadToCloudinary = async (file, folder = "products") => {
+  const result = await cloudinary.uploader.upload(
+    file.path || file,
+    { folder }
+  );
+
+  return {
+    url: result.secure_url,
+    public_id: result.public_id,
+  };
+};
+
+const deleteFromCloudinary = async (public_id) => {
+  if (!public_id) return;
+  try {
+    await cloudinary.uploader.destroy(public_id);
+  } catch (err) {
+    console.error("Cloudinary delete failed:", err.message);
   }
 };
 
-export const getFeaturedProducts = async (req, res) => {
-  try {
-    let featuredProducts;
-
-    // Try Redis cache first with timeout to handle Render network delays
-    try {
-      const redisPromise = redis.get("featured_products");
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Redis timeout")), 2000)
-      );
-
-      const cachedProducts = await Promise.race([redisPromise, timeoutPromise]);
-
-      if (cachedProducts) {
-        console.log("Fetching featured products from Redis cache");
-        return res.status(200).json(JSON.parse(cachedProducts));
-      }
-    } catch (redisError) {
-      console.warn(
-        "Redis cache failed, falling back to database:",
-        redisError.message
-      );
-      // Continue to database fallback
-    }
-
-    // Fallback to database
-    console.log("Fetching featured products from database");
-    featuredProducts = await Product.find({ isFeatured: true }).lean();
-
-    if (featuredProducts.length === 0) {
-      return res.status(404).json({ message: "No featured products found" });
-    }
-
-    // Try to cache the result, but don't fail if Redis is unavailable
-    try {
-      await redis.set(
-        "featured_products",
-        JSON.stringify(featuredProducts),
-        "EX",
-        3600
-      ); // 1 hour expiry
-      console.log("Featured products cached successfully");
-    } catch (cacheError) {
-      console.warn("Failed to cache featured products:", cacheError.message);
-      // Don't fail the request if caching fails
-    }
-
-    res.status(200).json(featuredProducts);
-  } catch (error) {
-    console.error("Error fetching featured products:", error);
-    res.status(500).send("Server error");
-  }
-};
-
-export const getProductsByCategory = async (req, res) => {
-  try {
-    const category = req.params.category;
-    const products = await Product.find({ category: category });
-    if (products.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No products found in this category" });
-    }
-    res.status(200).json(products);
-  } catch (error) {
-    console.error("Error fetching products by category:", error);
-    res.status(500).send("Server error");
-  }
-};
-
-export const getProductById = async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" });
-    }
-    res.status(200).json(product);
-  } catch (error) {
-    console.error("Error fetching product by ID:", error);
-    res.status(500).send("Server error");
-  }
-};
+/* ==================================================
+   CREATE PRODUCT (MULTIPLE IMAGES)
+================================================== */
 export const addProduct = async (req, res) => {
   try {
-    const { name, description, price, category, image, stock } = req.body;
+    const { name, description, price, category, stock, images } = req.body;
 
-    // Validate required fields
-    if (!name || !description || !price || !category || !image || !stock) {
-      return res.status(400).json({
-        error: "Missing required fields",
-        message:
-          "Please provide all required fields: name, description, price, category, image",
-      });
+    if (!name || !description || !price || !category) {
+      return res.status(400).json({ message: "Missing required fields" });
     }
 
-    // Validate price is a positive number
-    if (isNaN(price) || price < 0) {
-      return res.status(400).json({
-        error: "Invalid price",
-        message: "Price must be a valid positive number",
-      });
+    if (!Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ message: "At least one image required" });
     }
 
-    // Validate stock
-    if (stock !== undefined && (isNaN(stock) || stock < 0)) {
-      return res.status(400).json({
-        error: "Invalid stock",
-        message: "Stock must be a valid non-negative number",
-      });
-    }
+    const productImages = [];
 
-    let cloudinaryResponse = null;
-    try {
-      if (image) {
-        cloudinaryResponse = await cloudinary.uploader.upload(image, {
-          folder: "products",
-        });
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
+
+      if (!img.data) {
+        return res.status(400).json({ message: "Invalid image data" });
       }
-    } catch (cloudinaryError) {
-      console.error("Cloudinary upload error:", cloudinaryError);
-      return res.status(400).json({
-        error: "Image upload failed",
-        message: "Failed to upload product image",
+
+      // 🔥 Upload base64 to Cloudinary
+      const uploadResult = await cloudinary.uploader.upload(img.data, {
+        folder: "products",
+      });
+
+      productImages.push({
+        url: uploadResult.secure_url,
+        public_id: uploadResult.public_id,
+        altText: img.altText || "",
+        isPrimary: img.isPrimary === true,
       });
     }
 
-    const newProduct = new Product({
-      name,
-      description,
-      price: parseFloat(price),
-      category,
-      stock: stock || 0,
-      image: cloudinaryResponse?.secure_url || "",
-    });
+    // Ensure exactly one primary image
+    if (!productImages.some((i) => i.isPrimary)) {
+      productImages[0].isPrimary = true;
+    } else {
+      let primaryFound = false;
+      productImages.forEach((img) => {
+        if (img.isPrimary && !primaryFound) {
+          primaryFound = true;
+        } else {
+          img.isPrimary = false;
+        }
+      });
+    }
 
-    await newProduct.save();
-    console.log("Product saved successfully:", newProduct._id);
+    const product = await Product.create({
+      name: name.trim(),
+      description: description.trim(),
+      price,
+      category,
+      stock: Number(stock) || 0,
+      images: productImages,
+    });
 
     res.status(201).json({
-      message: "Product added successfully",
-      product: newProduct,
       success: true,
+      message: "Product created successfully",
+      product,
     });
+
   } catch (error) {
-    console.error("Error adding product:", error);
-
-    // Handle mongoose validation errors
-    if (error.name === "ValidationError") {
-      const messages = Object.values(error.errors).map((err) => err.message);
-      return res.status(400).json({
-        error: "Validation failed",
-        message: messages.join(", "),
-      });
-    }
-
-    res.status(500).json({
-      error: "Internal server error",
-      message: "An unexpected error occurred while creating the product",
-    });
+    console.error("Add product error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };
 
+
+/* ==================================================
+   UPDATE PRODUCT
+================================================== */
 export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, price, category, image, stock } = req.body;
 
-    // Detect if this is a mobile request (user agent check)
-    const userAgent = req.get("User-Agent") || "";
-    const isMobile =
-      /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        userAgent
-      );
+    const {
+      name,
+      description,
+      price,
+      category,
+      stock,
+      images,            // new images (base64)
+      removeImageIds,    // cloudinary public_ids to delete
+    } = req.body;
 
-    console.log(
-      `📱 Update request from ${isMobile ? "MOBILE" : "DESKTOP"} device`
-    );
-
-    // Find the existing product
     const product = await Product.findById(id);
+
     if (!product) {
-      return res.status(404).json({
-        error: "Product not found",
-        message: "No product found with the provided ID",
-      });
+      return res.status(404).json({ message: "Product not found" });
     }
 
-    // Validate required fields if provided
-    if (name !== undefined && !name.trim()) {
-      return res.status(400).json({
-        error: "Invalid name",
-        message: "Product name cannot be empty",
-      });
-    }
+    /* ---------------- BASIC FIELDS ---------------- */
+    if (name !== undefined) product.name = name.trim();
+    if (description !== undefined) product.description = description.trim();
+    if (price !== undefined) product.price = price;
+    if (category !== undefined) product.category = category;
+    if (stock !== undefined) product.stock = Number(stock);
 
-    if (price !== undefined && (isNaN(price) || price < 0)) {
-      return res.status(400).json({
-        error: "Invalid price",
-        message: "Price must be a valid positive number",
-      });
-    }
-
-    if (stock !== undefined && (isNaN(stock) || stock < 0)) {
-      return res.status(400).json({
-        error: "Invalid stock",
-        message: "Stock must be a valid non-negative number",
-      });
-    }
-
-    let cloudinaryResponse = null;
-    let newImageUrl = product.image; // Keep existing image by default
-
-    // Handle image update if provided
-    if (image && image !== product.image) {
-      try {
-        // Delete old image from Cloudinary if it exists
-        if (product.image) {
-          try {
-            const oldPublicId = product.image.split("/").pop().split(".")[0];
-            await cloudinary.uploader.destroy(
-              `haleemmedicose/products/${oldPublicId}`
-            );
-          } catch (deleteError) {
-            console.warn(
-              "Failed to delete old image from Cloudinary:",
-              deleteError.message
-            );
-          }
+    /* ---------------- REMOVE IMAGES ---------------- */
+    if (Array.isArray(removeImageIds) && removeImageIds.length > 0) {
+      for (const publicId of removeImageIds) {
+        try {
+          await cloudinary.uploader.destroy(publicId);
+        } catch (err) {
+          console.warn("Cloudinary delete failed:", publicId);
         }
+      }
 
-        // Upload new image with mobile-specific options
-        const uploadOptions = {
+      product.images = product.images.filter(
+        (img) => !removeImageIds.includes(img.public_id)
+      );
+    }
+
+    /* ---------------- ADD NEW IMAGES ---------------- */
+    if (Array.isArray(images) && images.length > 0) {
+      for (const img of images) {
+        if (!img.data) continue;
+
+        const uploaded = await cloudinary.uploader.upload(img.data, {
           folder: "products",
-          ...(isMobile && {
-            transformation: [
-              { width: 800, height: 800, crop: "limit", quality: "auto:good" },
-            ],
-          }),
-        };
+        });
 
-        cloudinaryResponse = await cloudinary.uploader.upload(
-          image,
-          uploadOptions
-        );
-        newImageUrl = cloudinaryResponse.secure_url;
-
-        console.log(
-          `📷 Image uploaded successfully (${
-            isMobile ? "mobile optimized" : "original"
-          })`
-        );
-      } catch (cloudinaryError) {
-        console.error("Cloudinary upload error:", cloudinaryError);
-        return res.status(400).json({
-          error: "Image upload failed",
-          message: "Failed to upload product image",
+        product.images.push({
+          url: uploaded.secure_url,
+          public_id: uploaded.public_id,
+          altText: img.altText || "",
+          isPrimary: img.isPrimary === true,
         });
       }
     }
+    if (product.images.length === 0) {
+  return res.status(400).json({ message: "Product must have at least one image" });
+}
 
-    // Update product fields
-    if (name !== undefined) product.name = name.trim();
-    if (description !== undefined) product.description = description.trim();
-    if (price !== undefined) product.price = parseFloat(price);
-    if (category !== undefined) product.category = category;
-    if (stock !== undefined) product.stock = parseInt(stock, 10);
-    if (image !== undefined) product.image = newImageUrl;
+    /* ---------------- PRIMARY IMAGE SAFETY ---------------- */
+    if (product.images.length > 0) {
+      let primaryFound = false;
 
-    // Save the updated product
+      product.images = product.images.map((img) => {
+        if (img.isPrimary && !primaryFound) {
+          primaryFound = true;
+          return img;
+        }
+        return { ...img.toObject(), isPrimary: false };
+      });
+
+      if (!primaryFound) {
+        product.images[0].isPrimary = true;
+      }
+    }
+
     await product.save();
 
-    console.log(
-      `✅ Product updated successfully (${isMobile ? "mobile" : "desktop"}):`,
-      product._id
-    );
-
     res.status(200).json({
-      message: `Product updated successfully${isMobile ? " on mobile" : ""}`,
-      product: product,
       success: true,
-      isMobile,
-    });
-  } catch (error) {
-    console.error("Error updating product:", error);
-
-    // Handle mongoose validation errors
-    if (error.name === "ValidationError") {
-      const messages = Object.values(error.errors).map((err) => err.message);
-      return res.status(400).json({
-        error: "Validation failed",
-        message: messages.join(", "),
-      });
-    }
-
-    res.status(500).json({
-      error: "Internal server error",
-      message: "An unexpected error occurred while updating the product",
-    });
-  }
-};
-export const deleteProduct = async (req, res) => {
-  const { id } = req.params;
-  try {
-    const product = await Product.findById(id);
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" });
-    }
-    if (product.image) {
-      const publicId = product.image.split("/").pop().split(".")[0];
-      await cloudinary.uploader.destroy(`haleemmedicose/products/${publicId}`);
-    }
-    await product.deleteOne();
-    res.status(200).json({ message: "Product deleted successfully" });
-  } catch (error) {
-    console.error("Error deleting product:", error);
-    res.status(500).send("Server error");
-  }
-};
-
-// Additional functions for product management can be added here
-export const getRecommendedProducts = async (req, res) => {
-  try {
-    // Add timeout to handle network delays from Render
-    const productsPromise = Product.aggregate([
-      { $sample: { size: 3 } },
-      {
-        $project: {
-          _id: 1,
-          name: 1,
-          price: 1,
-          image: 1,
-          description: 1,
-        },
-      },
-    ]);
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Database aggregation timeout")), 5000)
-    );
-
-    const products = await Promise.race([productsPromise, timeoutPromise]);
-    console.log(products);
-    res.status(200).json(products);
-  } catch (error) {
-    console.error("Error fetching recommended products:", error);
-    if (error.message.includes("timeout")) {
-      res.status(504).json({
-        error: "Request timeout",
-        message: "Database operation timeout",
-      });
-    } else {
-      res.status(500).send("Server error");
-    }
-  }
-};
-
-export const setFeaturedProduct = async (req, res) => {
-  const { id } = req.params;
-  try {
-    const product = await Product.findById(id);
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" });
-    }
-    product.isFeatured = !product.isFeatured;
-    await product.save();
-    await updateFeaturedProductsCache();
-    res.status(200).json({
-      message: `Product ${
-        product.isFeatured ? "set as" : "removed from"
-      } featured successfully`,
+      message: "Product updated successfully",
       product,
     });
   } catch (error) {
-    console.error("Error setting featured product:", error);
-    res.status(500).send("Server error");
+    console.error("Update product error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+/* ==================================================
+   DELETE PRODUCT
+================================================== */
+export const deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    for (const img of product.images) {
+      await deleteFromCloudinary(img.public_id);
+    }
+
+    await product.deleteOne();
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
   }
 };
 
+/* ==================================================
+   GETTERS (USED BY ROUTES)
+================================================== */
+
+export const getAllProducts = async (req, res) => {
+  const products = await Product.find().sort({ createdAt: -1 });
+  res.json(products);
+};
+
+export const getProductById = async (req, res) => {
+  const product = await Product.findById(req.params.id);
+  if (!product) return res.status(404).json({ message: "Not found" });
+  res.json(product);
+};
+
+export const getProductsByCategory = async (req, res) => {
+  const products = await Product.find({ category: req.params.category });
+  res.json(products);
+};
+
+export const getFeaturedProducts = async (req, res) => {
+  const products = await Product.find({ isFeatured: true });
+  res.json(products);
+};
+
+export const getRecommendedProducts = async (req, res) => {
+  const products = await Product.find().limit(6);
+  res.json(products);
+};
+
+/* ==================================================
+   FEATURED PRODUCT
+================================================== */
+export const setFeaturedProduct = async (req, res) => {
+  const product = await Product.findById(req.params.id);
+  if (!product) return res.status(404).json({ message: "Product not found" });
+
+  product.isFeatured = !product.isFeatured;
+  await product.save();
+
+  res.json({ success: true, product });
+};
+
+/* ==================================================
+   STOCK (USED IN ORDER FLOW)
+================================================== */
 export const decreaseStock = async (req, res) => {
   try {
-    const { id } = req.params;
     const { quantity } = req.body;
-
-    console.log(
-      `[DECREASE_STOCK] Request received for product ${id} with quantity ${quantity}`
-    );
-    console.log(`[DECREASE_STOCK] Request URL: ${req.originalUrl}`);
-    console.log(`[DECREASE_STOCK] Request method: ${req.method}`);
-
-    if (!quantity || quantity < 0) {
-      console.log(`[DECREASE_STOCK] Invalid quantity: ${quantity}`);
-      return res.status(400).json({
-        error: "Invalid quantity",
-        message: "Quantity must be a positive number",
-      });
-    }
-
-    const product = await Product.findById(id);
-    console.log(
-      `[DECREASE_STOCK] Product found:`,
-      product ? `${product.name} (stock: ${product.stock})` : "NOT FOUND"
-    );
+    const product = await Product.findById(req.params.id);
 
     if (!product) {
-      console.log(`[DECREASE_STOCK] Product ${id} not found in database`);
-      return res.status(404).json({
-        error: "Product not found",
-        message: "The product to update stock for does not exist",
-      });
+      return res.status(404).json({ message: "Product not found" });
     }
 
-    // Check if there's enough stock
-    if (product.stock < quantity) {
-      console.log(
-        `[DECREASE_STOCK] Insufficient stock: have ${product.stock}, need ${quantity}`
-      );
-      return res.status(400).json({
-        error: "Insufficient stock",
-        message: `Only ${product.stock} items available, but trying to decrease by ${quantity}`,
-        availableStock: product.stock,
-      });
-    }
-
-    // Decrease the stock
-    const oldStock = product.stock;
     product.stock -= quantity;
+    if (product.stock < 0) product.stock = 0;
+
     await product.save();
-
-    console.log(
-      `[DECREASE_STOCK] SUCCESS: ${product.name} stock decreased from ${oldStock} to ${product.stock} (decreased by ${quantity})`
-    );
-
-    res.status(200).json({
-      message: "Stock decreased successfully",
-      product: {
-        _id: product._id,
-        name: product.name,
-        stock: product.stock,
-        price: product.price,
-      },
-      decreasedBy: quantity,
-      newStock: product.stock,
-      oldStock: oldStock,
-    });
+    res.json({ success: true });
   } catch (error) {
-    console.error("[DECREASE_STOCK] Error:", error);
-    res.status(500).json({
-      error: "Internal server error",
-      message: "Failed to decrease stock",
-      details: error.message,
-    });
+    res.status(500).json({ message: "Server error" });
   }
 };
-
-async function updateFeaturedProductsCache() {
-  try {
-    const featuredProducts = await Product.find({ isFeatured: true }).lean();
-    await redis.set("featured_products", JSON.stringify(featuredProducts));
-    console.log("Featured products cache updated");
-  } catch (error) {
-    console.error("Error updating featured products cache:", error);
-  }
-}

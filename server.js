@@ -105,7 +105,7 @@ app.use(
   })
 );
 
-// Add request timeout middleware for mobile devices
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use((req, res, next) => {
   // Set timeout based on request type - much longer for products with images
   const isProductRequest = req.path.startsWith("/api/products");
